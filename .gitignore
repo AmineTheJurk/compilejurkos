@@ -1,0 +1,10 @@
+# JurkOS Build Artifacts
+# *.img
+jurkos_device.map
+.version
+
+# Temporary Mount Points
+/mnt/jurk_tmp/
+
+# OS Binary (Compiled sbin/main)
+iso/sbin/main

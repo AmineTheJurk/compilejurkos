@@ -1,0 +1,138 @@
+name: Compile JurkOS Kernels (32-bit & 64-bit)
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'source/linux/**'
+      - 'The-JurkOS-Project/source/linux/**'
+      - 'source/buildroot/**'
+      - 'The-JurkOS-Project/source/buildroot/**'
+      - 'buildroot.config'
+      - 'The-JurkOS-Project/buildroot.config'
+      - '.github/workflows/compile-kernels.yml'
+      - 'The-JurkOS-Project/.github/workflows/compile-kernels.yml'
+
+jobs:
+  build-64bit:
+    name: Build 64-bit Kernel (kernel-x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            libncurses-dev \
+            bison \
+            flex \
+            libssl-dev \
+            libelf-dev \
+            bc \
+            wget \
+            xz-utils
+
+      - name: Download Linux 6.14.0 source
+        run: |
+          KERNEL_VER="6.14"
+          echo "Downloading Linux ${KERNEL_VER}..."
+          wget -q https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-${KERNEL_VER}.tar.xz
+          tar -xf linux-${KERNEL_VER}.tar.xz
+          mv linux-${KERNEL_VER} linux-src
+
+      - name: Apply 64-bit kernel config
+        run: |
+          cd linux-src
+          if [ -f "../The-JurkOS-Project/source/linux/64-bit/.config" ]; then
+            cp ../The-JurkOS-Project/source/linux/64-bit/.config .config
+          elif [ -f "../source/linux/64-bit/.config" ]; then
+            cp ../source/linux/64-bit/.config .config
+          else
+            echo "Error: 64-bit .config not found!" && exit 1
+          fi
+          make ARCH=x86_64 olddefconfig
+
+      - name: Compile 64-bit Kernel & Modules
+        run: |
+          cd linux-src
+          echo "Compiling 64-bit bzImage and DRM modules with $(nproc) cores..."
+          make -j$(nproc) ARCH=x86_64 bzImage modules
+          size vmlinux
+          cp arch/x86/boot/bzImage $GITHUB_WORKSPACE/kernel-x86_64
+          make modules_install ARCH=x86_64 INSTALL_MOD_PATH=$GITHUB_WORKSPACE/mod-out-64 INSTALL_MOD_STRIP=1
+          rm -f $GITHUB_WORKSPACE/mod-out-64/lib/modules/*/build $GITHUB_WORKSPACE/mod-out-64/lib/modules/*/source
+          tar -czf $GITHUB_WORKSPACE/modules-x86_64.tar.gz -C $GITHUB_WORKSPACE/mod-out-64 lib/modules
+
+      - name: Upload 64-bit Artifacts (Kernel & Modules)
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-x86_64
+          path: |
+            kernel-x86_64
+            modules-x86_64.tar.gz
+          retention-days: 1
+
+  build-32bit:
+    name: Build 32-bit Kernel (kernel-x86)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            gcc-multilib \
+            libncurses-dev \
+            bison \
+            flex \
+            libssl-dev \
+            libelf-dev \
+            bc \
+            wget \
+            xz-utils
+
+      - name: Download Linux 6.14.0 source
+        run: |
+          KERNEL_VER="6.14"
+          echo "Downloading Linux ${KERNEL_VER}..."
+          wget -q https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-${KERNEL_VER}.tar.xz
+          tar -xf linux-${KERNEL_VER}.tar.xz
+          mv linux-${KERNEL_VER} linux-src
+
+      - name: Apply 32-bit kernel config
+        run: |
+          cd linux-src
+          if [ -f "../The-JurkOS-Project/source/linux/32-bit/.config" ]; then
+            cp ../The-JurkOS-Project/source/linux/32-bit/.config .config
+          elif [ -f "../source/linux/32-bit/.config" ]; then
+            cp ../source/linux/32-bit/.config .config
+          else
+            echo "Error: 32-bit .config not found!" && exit 1
+          fi
+          make ARCH=i386 olddefconfig
+
+      - name: Compile 32-bit Kernel & Modules
+        run: |
+          cd linux-src
+          echo "Compiling 32-bit bzImage and DRM modules with $(nproc) cores..."
+          make -j$(nproc) ARCH=i386 bzImage modules
+          size vmlinux
+          cp arch/x86/boot/bzImage $GITHUB_WORKSPACE/kernel-x86
+          make modules_install ARCH=i386 INSTALL_MOD_PATH=$GITHUB_WORKSPACE/mod-out-32 INSTALL_MOD_STRIP=1
+          rm -f $GITHUB_WORKSPACE/mod-out-32/lib/modules/*/build $GITHUB_WORKSPACE/mod-out-32/lib/modules/*/source
+          tar -czf $GITHUB_WORKSPACE/modules-x86.tar.gz -C $GITHUB_WORKSPACE/mod-out-32 lib/modules
+
+      - name: Upload 32-bit Artifacts (Kernel & Modules)
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-x86
+          path: |
+            kernel-x86
+            modules-x86.tar.gz
+          retention-days: 1

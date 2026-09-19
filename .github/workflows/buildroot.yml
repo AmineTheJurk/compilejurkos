@@ -1,0 +1,183 @@
+name: Build JurkOS with Buildroot (Mesa3D, Gallium, libdrm)
+
+on:
+  workflow_dispatch:
+    inputs:
+      architecture:
+        description: "Target architecture (x86_64 or i686)"
+        required: true
+        default: "x86_64"
+        type: choice
+        options:
+          - x86_64
+          - i686
+  push:
+    paths:
+      - 'source/buildroot/**'
+      - 'The-JurkOS-Project/source/buildroot/**'
+      - 'buildroot.config'
+      - 'The-JurkOS-Project/buildroot.config'
+      - '.github/workflows/buildroot.yml'
+      - 'The-JurkOS-Project/.github/workflows/buildroot.yml'
+
+jobs:
+  buildroot:
+    name: Buildroot (${{ inputs.architecture || 'x86_64' }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Buildroot system prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            gcc-multilib \
+            g++-multilib \
+            bison \
+            flex \
+            gettext \
+            texinfo \
+            libncurses-dev \
+            file \
+            wget \
+            cpio \
+            rsync \
+            bc \
+            git \
+            unzip \
+            ccache \
+            python3 \
+            python3-setuptools
+
+      - name: Download Buildroot LTS
+        run: |
+          BUILDROOT_VER="2024.02.9"
+          echo "Downloading Buildroot ${BUILDROOT_VER}..."
+          wget -q https://buildroot.org/downloads/buildroot-${BUILDROOT_VER}.tar.xz
+          tar -xf buildroot-${BUILDROOT_VER}.tar.xz
+          mv buildroot-${BUILDROOT_VER} buildroot
+
+      - name: Cache Buildroot downloads
+        uses: actions/cache@v4
+        with:
+          path: buildroot/dl
+          key: buildroot-dl-${{ runner.os }}
+          restore-keys: |
+            buildroot-dl-${{ runner.os }}-
+
+      - name: Cache Buildroot ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.buildroot-ccache
+          key: buildroot-ccache-${{ inputs.architecture || 'x86_64' }}-${{ hashFiles('**/source/buildroot/**', '**/source/linux/**') }}
+          restore-keys: |
+            buildroot-ccache-${{ inputs.architecture || 'x86_64' }}-
+
+      - name: Configure Buildroot and Kernel Config
+        run: |
+          ARCH="${{ inputs.architecture || 'x86_64' }}"
+          echo "Target Architecture: $ARCH"
+
+          # 1. Locate repository directory
+          REPO_DIR="$GITHUB_WORKSPACE"
+          if [ -d "$GITHUB_WORKSPACE/The-JurkOS-Project" ]; then
+            REPO_DIR="$GITHUB_WORKSPACE/The-JurkOS-Project"
+          fi
+          echo "Using REPO_DIR: $REPO_DIR"
+
+          # 2. Locate Linux kernel config
+          if [ "$ARCH" = "i686" ]; then
+            CONFIG_DEF="$REPO_DIR/source/buildroot/jurkos_i686_defconfig"
+            if [ -f "$REPO_DIR/source/linux/32-bit/.config" ]; then
+              KERNEL_SRC="$REPO_DIR/source/linux/32-bit/.config"
+            elif [ -f "$GITHUB_WORKSPACE/source/linux/32-bit/.config" ]; then
+              KERNEL_SRC="$GITHUB_WORKSPACE/source/linux/32-bit/.config"
+            fi
+          else
+            CONFIG_DEF="$REPO_DIR/source/buildroot/jurkos_x86_64_defconfig"
+            if [ -f "$REPO_DIR/source/linux/64-bit/.config" ]; then
+              KERNEL_SRC="$REPO_DIR/source/linux/64-bit/.config"
+            elif [ -f "$GITHUB_WORKSPACE/source/linux/64-bit/.config" ]; then
+              KERNEL_SRC="$GITHUB_WORKSPACE/source/linux/64-bit/.config"
+            fi
+          fi
+
+          echo "Defconfig: $CONFIG_DEF"
+          echo "Kernel config source: $KERNEL_SRC"
+
+          if [ -z "$KERNEL_SRC" ] || [ ! -f "$KERNEL_SRC" ]; then
+            echo "::error::Kernel configuration file for $ARCH could not be found!"
+            find "$GITHUB_WORKSPACE" -name ".config" -ls
+            exit 1
+          fi
+
+          # 3. Setup board directory inside Buildroot
+          mkdir -p buildroot/board/jurkos
+          mkdir -p buildroot/source/linux/64-bit
+          mkdir -p buildroot/source/linux/32-bit
+
+          # Copy to board/jurkos/linux.config (the canonical Buildroot location)
+          cp -f "$KERNEL_SRC" buildroot/board/jurkos/linux.config
+
+          # Also copy to source/linux/64-bit/.config and 32-bit/.config to prevent any missing path errors
+          cp -f "$KERNEL_SRC" buildroot/source/linux/64-bit/.config
+          cp -f "$KERNEL_SRC" buildroot/source/linux/32-bit/.config
+
+          # 4. Copy and apply JurkOS defconfig
+          cp "$CONFIG_DEF" buildroot/configs/jurkos_defconfig
+          cd buildroot
+          make jurkos_defconfig
+          make olddefconfig
+
+          # 5. Verify the kernel configuration is registered and exists
+          echo "Checking kernel config path registered in Buildroot .config:"
+          grep "^BR2_LINUX_KERNEL_CUSTOM_CONFIG_FILE" .config || true
+
+          if [ ! -f "board/jurkos/linux.config" ]; then
+            echo "::error::board/jurkos/linux.config was not created properly!"
+            exit 1
+          fi
+          echo "✅ Pre-flight check passed: Kernel config ready ($(wc -l < board/jurkos/linux.config) lines)."
+
+      - name: Compile Buildroot packages (Mesa3D Gallium, libdrm, EGL/GBM)
+        run: |
+          cd buildroot
+          echo "Building rootfs, Mesa3D Gallium, and Kernel with $(nproc) parallel jobs..."
+          make -j$(nproc)
+
+      - name: Package Buildroot artifacts
+        run: |
+          mkdir -p $GITHUB_WORKSPACE/buildroot-dist
+          cd buildroot/output/images/
+          if [ -f "rootfs.ext4" ]; then
+            cp rootfs.ext4 $GITHUB_WORKSPACE/buildroot-dist/jurkos-rootfs.ext4
+          elif [ -f "rootfs.ext2" ]; then
+            cp rootfs.ext2 $GITHUB_WORKSPACE/buildroot-dist/jurkos-rootfs.ext4
+          fi
+          if [ -f "bzImage" ]; then
+            cp bzImage $GITHUB_WORKSPACE/buildroot-dist/bzImage
+          fi
+          cd $GITHUB_WORKSPACE/buildroot/output/target
+          tar -czf $GITHUB_WORKSPACE/buildroot-dist/jurkos-graphics-libs.tar.gz usr/lib/libdrm* usr/lib/libgbm* usr/lib/libEGL* usr/lib/libGL* usr/lib/dri/ 2>/dev/null || true
+          cd $GITHUB_WORKSPACE/buildroot-dist
+          zip -9 jurkos-buildroot.zip *
+
+      - name: Upload Buildroot Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: jurkos-buildroot-${{ inputs.architecture || 'x86_64' }}
+          path: buildroot-dist/
+          retention-days: 7
+
+      - name: Summary
+        run: |
+          echo "### 🛠️ Buildroot Compilation Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "- **Target Architecture:** ${{ inputs.architecture || 'x86_64' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **libdrm:** Intel, Radeon" >> $GITHUB_STEP_SUMMARY
+          echo "- **Mesa3D Gallium Drivers:** swrast, virgl, iris, radeonsi, nouveau" >> $GITHUB_STEP_SUMMARY
+          echo "- **Graphics APIs:** EGL, OpenGL ES, GBM" >> $GITHUB_STEP_SUMMARY
+          echo "- **Linux Kernel Drivers:** Direct Rendering Manager (DRI), Intel HD Graphics, AMD GPU, VirtIO GPU" >> $GITHUB_STEP_SUMMARY
