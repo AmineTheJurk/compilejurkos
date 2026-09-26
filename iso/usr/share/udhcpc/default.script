@@ -1,0 +1,45 @@
+#!/bin/sh
+# BusyBox udhcpc script for JurkOS
+
+RESOLV_CONF="/etc/resolv.conf"
+
+[ -n "$1" ] || { echo "Error: should be called from udhcpc"; exit 1; }
+
+NETMASK=""
+[ -n "$subnet" ] && NETMASK="netmask $subnet"
+BROADCAST=""
+[ -n "$broadcast" ] && BROADCAST="broadcast $broadcast"
+
+case "$1" in
+    deconfig)
+        /bin/ifconfig $interface 0.0.0.0
+        ;;
+
+    renew|bound)
+        /bin/ifconfig $interface $ip $NETMASK $BROADCAST
+
+        if [ -n "$router" ]; then
+            echo "Deleting routers"
+            while /bin/route del default gw 0.0.0.0 dev $interface 2>/dev/null; do
+                :
+            done
+
+            for i in $router; do
+                /bin/route add default gw $i dev $interface
+            done
+        fi
+
+        echo -n > $RESOLV_CONF
+        [ -n "$domain" ] && echo search $domain >> $RESOLV_CONF
+        for i in $dns; do
+            echo nameserver $i >> $RESOLV_CONF
+        done
+        # Fallback public DNS if DHCP provided none
+        if [ ! -s $RESOLV_CONF ]; then
+            echo "nameserver 8.8.8.8" >> $RESOLV_CONF
+            echo "nameserver 1.1.1.1" >> $RESOLV_CONF
+        fi
+        ;;
+esac
+
+exit 0

@@ -1,0 +1,157 @@
+name: Build JurkOS Bootable Image
+
+on:
+  push:
+    branches: [ "**" ]
+    tags: [ "v*" ]
+  pull_request:
+    branches: [ "**" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Compile JurkOS Image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install build tools and dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc-multilib \
+            pkg-config \
+            extlinux \
+            syslinux \
+            syslinux-common \
+            parted \
+            e2fsprogs \
+            zip \
+            gzip \
+            wireless-tools \
+            wpasupplicant \
+            iw
+
+      - name: Build JurkOS disk image
+        run: |
+          if [ -d "The-JurkOS-Project/iso" ]; then
+            cd The-JurkOS-Project
+          fi
+
+          echo "Compiling init binary, JurkStore, and Wi-Fi manager..."
+          gcc -static -Wall -Wno-unused-result -Wno-stringop-truncation iso/sbin/main.c -o iso/sbin/main
+          gcc -static -Wall -Wno-unused-result -Wno-stringop-truncation iso/sbin/jurkstore.c -o iso/bin/JurkStore
+          gcc -static -Wall -Wno-unused-result -Wno-stringop-truncation iso/sbin/wifi.c -o iso/bin/wifi
+          chmod +x iso/bin/JurkStore iso/bin/wifi iso/sbin/main
+          ln -sf JurkStore iso/bin/jurkstore
+
+          echo "Bundling system wireless utilities..."
+          cp -f /sbin/wpa_supplicant iso/sbin/ 2>/dev/null || cp -f /usr/sbin/wpa_supplicant iso/sbin/ 2>/dev/null || true
+          cp -f /sbin/iwlist iso/bin/ 2>/dev/null || cp -f /usr/bin/iwlist iso/bin/ 2>/dev/null || true
+          cp -f /sbin/iw iso/bin/ 2>/dev/null || cp -f /usr/bin/iw iso/bin/ 2>/dev/null || true
+
+          echo "Ensuring full executable permissions across all system binaries..."
+          chmod -R 755 iso/bin iso/sbin
+
+          echo "Creating 512MB disk image..."
+          truncate -s 512M jurkos.img
+
+          echo "Partitioning MBR..."
+          parted -s jurkos.img mklabel msdos mkpart primary ext4 1M 100% set 1 boot on
+
+          echo "Injecting disk signature..."
+          printf "\x78\x56\x34\x12" | dd of=jurkos.img bs=1 seek=440 conv=notrunc status=none
+
+          echo "Attaching loop device..."
+          DEVICE=$(sudo losetup -Pf --show jurkos.img)
+          echo "Device attached: $DEVICE"
+
+          echo "Formatting ext4 filesystem..."
+          sudo mkfs.ext4 -L JURKOS_ROOT ${DEVICE}p1
+
+          echo "Mounting and copying files..."
+          sudo mkdir -p /mnt/jurk_tmp
+          sudo mount ${DEVICE}p1 /mnt/jurk_tmp
+          sudo cp -a iso/. /mnt/jurk_tmp/
+          sudo chmod -R 755 /mnt/jurk_tmp/bin /mnt/jurk_tmp/sbin
+
+          echo "Installing EXTLINUX bootloader..."
+          sudo mkdir -p /mnt/jurk_tmp/boot/extlinux
+          sudo extlinux --install /mnt/jurk_tmp/boot/extlinux
+          sudo dd bs=440 count=1 conv=notrunc if=/usr/lib/syslinux/mbr/mbr.bin of="$DEVICE" 2>/dev/null || sudo dd bs=440 count=1 conv=notrunc if=/usr/lib/EXTLINUX/mbr.bin of="$DEVICE"
+
+          echo "Unmounting and releasing loop device..."
+          sudo umount /mnt/jurk_tmp
+          sudo losetup -d "$DEVICE"
+
+          if [ -f "jurkos.img" ] && [ "$PWD" != "$GITHUB_WORKSPACE" ]; then
+            mv jurkos.img "$GITHUB_WORKSPACE/jurkos.img"
+          fi
+          cd "$GITHUB_WORKSPACE"
+          echo "JurkOS: Build Success."
+
+      - name: Verify build artifact
+        run: |
+          if [ ! -f jurkos.img ]; then
+            echo "::error::jurkos.img was not found!"
+            exit 1
+          fi
+          IMAGE_SIZE=$(stat -c%s jurkos.img)
+          echo "Built jurkos.img successfully. Size: $IMAGE_SIZE bytes ($((IMAGE_SIZE / 1024 / 1024)) MB)"
+          ls -lh jurkos.img
+
+      - name: Compress image for release and fast download
+        run: |
+          echo "Compressing jurkos.img into ZIP..."
+          zip -9 jurkos.zip jurkos.img
+          echo "Compressing jurkos.img into GZ..."
+          gzip -k -9 jurkos.img
+          ls -lh jurkos.img jurkos.zip jurkos.img.gz
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: JurkOS-Disk-Image
+          path: |
+            jurkos.zip
+            jurkos.img.gz
+          retention-days: 2
+
+      - name: Output download instructions
+        run: |
+          echo "======================================================================"
+          echo " 🎉 BUILD SUCCESSFUL!"
+          echo "======================================================================"
+          echo " DOWNLOAD YOUR FILE FROM GITHUB ACTIONS:"
+          echo " 1. Go to the Actions Run page:"
+          echo "    https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          echo " 2. Scroll to the bottom of the page under 'Artifacts'."
+          echo " 3. Click 'JurkOS-Disk-Image' to download your bootable image (jurkos.zip)!"
+          echo "======================================================================"
+
+          echo "### 💾 JurkOS Disk Image Compiled Successfully! 🚀" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Where to download:**" >> $GITHUB_STEP_SUMMARY
+          echo "Scroll down to the **Artifacts** section at the bottom of this run page and click **[JurkOS-Disk-Image](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})**." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| File | Format | Description |" >> $GITHUB_STEP_SUMMARY
+          echo "| :--- | :--- | :--- |" >> $GITHUB_STEP_SUMMARY
+          echo "| \`jurkos.zip\` | ZIP Archive | **Recommended** - Compressed bootable disk image (extract and flash with Rufus / Etcher) |" >> $GITHUB_STEP_SUMMARY
+          echo "| \`jurkos.img.gz\` | GZ Archive | Gzipped disk image |" >> $GITHUB_STEP_SUMMARY
+          echo "| \`jurkos.img\` | Raw Image | 512MB uncompressed ext4 MBR image |" >> $GITHUB_STEP_SUMMARY
+
+      - name: Create GitHub Release on tag
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            jurkos.zip
+            jurkos.img.gz
+            jurkos.img
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

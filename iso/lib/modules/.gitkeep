@@ -1,0 +1,3 @@
+# Place kernel module directories here:
+# /lib/modules/5.10.226-x86_64/ (for 64-bit kernel)
+# /lib/modules/5.10.226-x86/ (for 32-bit kernel)
