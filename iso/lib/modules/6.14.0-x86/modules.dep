@@ -1,0 +1,19 @@
+kernel/drivers/video/fbdev/simplefb.ko:
+kernel/drivers/char/hw_random/rng-core.ko:
+kernel/drivers/char/hw_random/intel-rng.ko: kernel/drivers/char/hw_random/rng-core.ko
+kernel/drivers/char/hw_random/amd-rng.ko: kernel/drivers/char/hw_random/rng-core.ko
+kernel/drivers/char/hw_random/geode-rng.ko: kernel/drivers/char/hw_random/rng-core.ko
+kernel/drivers/char/hw_random/via-rng.ko: kernel/drivers/char/hw_random/rng-core.ko
+kernel/drivers/gpu/drm/i2c/ch7006.ko:
+kernel/drivers/gpu/drm/i2c/sil164.ko:
+kernel/drivers/gpu/drm/tiny/bochs.ko:
+kernel/drivers/gpu/drm/tiny/cirrus-qemu.ko:
+kernel/drivers/gpu/drm/tiny/simpledrm.ko:
+kernel/drivers/gpu/drm/drm_gpuvm.ko:
+kernel/drivers/gpu/drm/radeon/radeon.ko:
+kernel/drivers/gpu/drm/mgag200/mgag200.ko:
+kernel/drivers/gpu/drm/nouveau/nouveau.ko: kernel/drivers/gpu/drm/drm_gpuvm.ko
+kernel/drivers/gpu/drm/ast/ast.ko:
+kernel/drivers/gpu/drm/qxl/qxl.ko:
+kernel/drivers/thermal/intel/x86_pkg_temp_thermal.ko:
+kernel/drivers/platform/x86/mxm-wmi.ko:
