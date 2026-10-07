@@ -1,0 +1,1 @@
+INPUT(/usr/lib32/libcrypt.so.5 AS_NEEDED(-lmd))

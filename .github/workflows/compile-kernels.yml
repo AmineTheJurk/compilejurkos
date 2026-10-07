@@ -1,0 +1,79 @@
+name: Compile JurkOS Kernels
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'source/freebsd/**'
+      - 'The-JurkOS-Project/source/freebsd/**'
+      - '.github/workflows/compile-kernels.yml'
+      - 'The-JurkOS-Project/.github/workflows/compile-kernels.yml'
+
+jobs:
+  build-kernel:
+    name: Compiling Kernel
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Compiling Kernel
+        uses: vmactions/freebsd-vm@v1
+        with:
+          usesh: true
+          prepare: |
+            pkg update -f
+            pkg install -y gcc gmake git curl
+          run: |
+            echo "Checking FreeBSD kernel source tree in /usr/src..."
+            if [ ! -d "/usr/src/sys" ]; then
+              echo "Downloading FreeBSD 15.1 kernel source tree..."
+              fetch -o /tmp/src.txz https://download.freebsd.org/releases/amd64/15.1-RELEASE/src.txz || curl -sSL -f https://download.freebsd.org/releases/amd64/15.1-RELEASE/src.txz -o /tmp/src.txz
+              /usr/bin/tar -xf /tmp/src.txz -C /
+            fi
+
+            # Locate repository directory
+            REPO_DIR="$PWD"
+            if [ -d "$PWD/The-JurkOS-Project" ]; then
+              REPO_DIR="$PWD/The-JurkOS-Project"
+            fi
+
+            echo "Installing JurkOS kernel configurations..."
+            mkdir -p /usr/src/sys/amd64/conf /usr/src/sys/i386/conf
+            cp -f "$REPO_DIR/source/freebsd/JURKOS_FREEBSD_X86_64" /usr/src/sys/amd64/conf/JURKOS_FREEBSD_X86_64
+            cp -f "$REPO_DIR/source/freebsd/JURKOS_FREEBSD_X86" /usr/src/sys/i386/conf/JURKOS_FREEBSD_X86
+
+            echo "Compiling 64-bit FreeBSD kernel (JURKOS_FREEBSD_X86_64)..."
+            cd /usr/src
+            make buildkernel KERNCONF=JURKOS_FREEBSD_X86_64 -j$(sysctl -n hw.ncpu)
+
+            echo "Copying 64-bit kernel artifact..."
+            mkdir -p "$REPO_DIR/iso/boot/limine"
+            if [ -f "/usr/src/sys/amd64/compile/JURKOS_FREEBSD_X86_64/kernel" ]; then
+              cp -f /usr/src/sys/amd64/compile/JURKOS_FREEBSD_X86_64/kernel "$REPO_DIR/iso/boot/limine/kernel-x86_64"
+            elif [ -f "/usr/obj/usr/src/amd64.amd64/sys/JURKOS_FREEBSD_X86_64/kernel" ]; then
+              cp -f /usr/obj/usr/src/amd64.amd64/sys/JURKOS_FREEBSD_X86_64/kernel "$REPO_DIR/iso/boot/limine/kernel-x86_64"
+            fi
+
+            echo "Compiling 32-bit FreeBSD kernel (JURKOS_FREEBSD_X86)..."
+            make buildkernel KERNCONF=JURKOS_FREEBSD_X86 TARGET_ARCH=i386 -j$(sysctl -n hw.ncpu) || true
+
+            echo "Copying 32-bit kernel artifact..."
+            if [ -f "/usr/src/sys/i386/compile/JURKOS_FREEBSD_X86/kernel" ]; then
+              cp -f /usr/src/sys/i386/compile/JURKOS_FREEBSD_X86/kernel "$REPO_DIR/iso/boot/limine/kernel-x86"
+            elif [ -f "/usr/obj/usr/src/i386.i386/sys/JURKOS_FREEBSD_X86/kernel" ]; then
+              cp -f /usr/obj/usr/src/i386.i386/sys/JURKOS_FREEBSD_X86/kernel "$REPO_DIR/iso/boot/limine/kernel-x86"
+            fi
+
+            echo "Compiling Kernel completed successfully!"
+
+      - name: Upload Kernel Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: jurkos-kernels
+          path: |
+            iso/boot/limine/kernel-x86_64
+            iso/boot/limine/kernel-x86
+            The-JurkOS-Project/iso/boot/limine/kernel-x86_64
+            The-JurkOS-Project/iso/boot/limine/kernel-x86
+          retention-days: 7

@@ -1,0 +1,11 @@
+prefix=/usr
+exec_prefix=${prefix}
+libdir=/usr/lib32
+sharedlibdir=/usr/lib32
+includedir=/usr/include
+
+Name: bzip2
+Description: bzip2 compression library
+Version: 1.0.8
+Libs: -L${libdir} -lbz2
+Cflags: -I${includedir}

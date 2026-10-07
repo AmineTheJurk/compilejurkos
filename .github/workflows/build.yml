@@ -1,0 +1,113 @@
+name: Build JurkOS Dual-Arch Image
+
+on:
+  push:
+    branches: [ "**" ]
+    tags: [ "v*" ]
+  pull_request:
+    branches: [ "**" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Compiling JurkOS
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-multilib extlinux syslinux syslinux-common parted e2fsprogs zip gzip
+
+      - name: Compiling JurkOS
+        run: |
+          if [ -d "The-JurkOS-Project/iso" ]; then
+            cd The-JurkOS-Project
+          fi
+
+          echo "Compiling JurkOS userland binaries..."
+          gcc -static -Wall -Wno-unused-result -Wno-stringop-truncation iso/sbin/main.c -o iso/sbin/main
+          gcc -static -Wall -Wno-unused-result -Wno-stringop-truncation iso/sbin/jurkstore.c -o iso/bin/JurkStore
+          gcc -static -Wall -Wno-unused-result -Wno-stringop-truncation iso/sbin/wifi.c -o iso/bin/wifi
+          chmod +x iso/bin/JurkStore iso/bin/wifi iso/sbin/main
+          ln -sf JurkStore iso/bin/jurkstore
+
+          echo "Ensuring Limine Bootloader and Dual-Kernel configuration..."
+          mkdir -p iso/boot/limine
+          if [ -f "iso/boot/limine.conf" ]; then
+            cp -f iso/boot/limine.conf iso/boot/limine/limine.conf
+          fi
+          if [ -f "iso/boot/limine.cfg" ]; then
+            cp -f iso/boot/limine.cfg iso/boot/limine/limine.cfg
+          fi
+
+          echo "Creating 512MB JurkOS disk image..."
+          truncate -s 512M jurkos.img
+
+          echo "Partitioning MBR..."
+          parted -s jurkos.img mklabel msdos mkpart primary ext4 1M 100% set 1 boot on
+          printf "\x78\x56\x34\x12" | dd of=jurkos.img bs=1 seek=440 conv=notrunc status=none
+
+          echo "Installing Limine Bootloader to disk image..."
+          limine bios-install jurkos.img || limine-deploy jurkos.img || ./limine/limine bios-install jurkos.img || true
+
+          if [ -f "jurkos.img" ] && [ "$PWD" != "$GITHUB_WORKSPACE" ]; then
+            mv jurkos.img "$GITHUB_WORKSPACE/jurkos.img"
+          fi
+          echo "Compiling JurkOS successful."
+
+      - name: Verify build artifact
+        run: |
+          if [ ! -f jurkos.img ]; then
+            echo "::error::jurkos.img was not found!"
+            exit 1
+          fi
+          IMAGE_SIZE=$(stat -c%s jurkos.img)
+          echo "Built jurkos.img successfully. Size: $IMAGE_SIZE bytes ($((IMAGE_SIZE / 1024 / 1024)) MB)"
+          ls -lh jurkos.img
+
+      - name: Compress image for release and fast download
+        run: |
+          echo "Compressing jurkos.img into ZIP..."
+          zip -9 jurkos.zip jurkos.img
+          echo "Compressing jurkos.img into GZ..."
+          gzip -k -9 jurkos.img
+          ls -lh jurkos.img jurkos.zip jurkos.img.gz
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: JurkOS-Disk-Image
+          path: |
+            jurkos.zip
+            jurkos.img.gz
+          retention-days: 2
+
+      - name: Output download instructions
+        run: |
+          echo "======================================================================"
+          echo " 🎉 BUILD SUCCESSFUL - Compiling JurkOS"
+          echo "======================================================================"
+          echo " DOWNLOAD YOUR FILE FROM GITHUB ACTIONS:"
+          echo " 1. Go to the Actions Run page:"
+          echo "    https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          echo " 2. Scroll to the bottom of the page under 'Artifacts'."
+          echo " 3. Click 'JurkOS-Disk-Image' to download your bootable image (jurkos.zip)!"
+          echo "======================================================================"
+
+      - name: Create GitHub Release on tag
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            jurkos.zip
+            jurkos.img.gz
+            jurkos.img
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,125 @@
+#
+# JurkOS FreeBSD Kernel Configuration (Monolithic - All Drivers Baked In)
+# Architecture: 32-bit (i386 / i686)
+# Kernel Type: Monolithic Unix Kernel (No external modules required)
+# Kernel Output Binary Name: kernel-x86
+#
+
+ident		JURKOS_FREEBSD_KERNEL_32
+
+machine		i386
+cpu		I686_CPU
+
+makeoptions	DEBUG=-g
+makeoptions	WITH_EXTRA_DRIVERS=yes
+
+options 	SCHED_ULE		# ULE scheduler
+options 	PREEMPTION		# Enable kernel thread preemption
+options 	INET			# InterNETworking
+options 	INET6			# IPv6 protocol
+options 	IPSEC			# IP security
+options 	TCP_HHOOK		# hhook(9) framework for TCP
+options 	FFS			# Berkeley Fast Filesystem
+options 	SOFTUPDATES		# Enable FFS soft updates
+options 	UFS_ACL			# Support for ACLs
+options 	UFS_DIRHASH		# Improve performance on big directories
+options 	UFS_GJOURNAL		# Enable gjournal support
+options 	EXT2FS			# Second Extended Filesystem
+options 	PSEUDOFS		# Pseudo-filesystem framework
+options 	GEOM_PART_GPT		# GUID Partition Table
+options 	GEOM_PART_MBR		# MBR Partition Table
+options 	GEOM_LABEL		# Provide label names for filesystem
+options 	COMPAT_FREEBSD12	# Compatible with FreeBSD 12
+options 	COMPAT_FREEBSD13	# Compatible with FreeBSD 13
+options 	COMPAT_43TTY		# BSD 4.3 tty packet mode
+options 	SCSI_DELAY=5000		# Delay (in ms) before probing SCSI
+options 	KTRACE			# ktrace(1) support
+options 	STACK			# stack(9) support
+options 	SYSVSHM			# SYSV-style shared memory
+options 	SYSVMSG			# SYSV-style message queues
+options 	SYSVSEM			# SYSV-style semaphores
+options 	_KPOSIX_PRIORITY_SCHEDULING # POSIX P1003.1B real-time extensions
+options 	PRINTF_BUFR_SIZE=128	# Prevent printf output overlap
+
+# Bus Types
+device		acpi
+device		pci
+device		isa
+
+# ATA & SATA Disk Controllers
+device		ahci			# AHCI SATA
+device		ata			# Legacy ATA
+device		scbus			# SCSI bus required for ATA/SATA
+device		da			# Direct Access (disks/USB drives)
+
+# Console & Virtual Terminals
+device		vt
+device		vt_vga
+device		vt_efifb
+
+# Built-In DRM Graphics Drivers (All Baked In statically)
+device		drm			# Direct Rendering Manager core
+device		i915drm			# Intel HD/Iris Graphics DRM
+device		radeonkms		# AMD/ATI Radeon KMS DRM
+device		amdgpu			# AMD Radeon Vega/Navi DRM
+device		nouveau			# NVIDIA Nouveau Open-Source DRM
+device		syscons			# Fallback framebuffers
+device		simplefb		# Simple Framebuffer support
+
+# Built-In Networking Core & Stack
+device		ether			# Ethernet support
+device		loop			# Network loopback
+device		bpf			# Berkeley packet filter
+
+# Built-In Wireless/Wi-Fi Subsystem & ALL Wi-Fi Drivers (Baked In)
+device		wlan			# 802.11 Support
+device		wlan_amrr		# AMRR transmit rate control
+device		wlan_wep		# WEP crypto engine
+device		wlan_ccmp		# CCMP / AES crypto engine
+device		wlan_tkip		# TKIP crypto engine
+device		wlan_rssi		# RSSI event notification
+device		wlan_xauth		# 802.1x authentication
+
+# Intel Wi-Fi Drivers (Baked In)
+device		iwn			# Intel Wireless 4965/1000/5000/6000
+device		iwm			# Intel Wireless 7260/7265/8260/8265
+device		iwx			# Intel Wireless-AC 9560 / Wi-Fi 6 AX200/AX201/AX210
+device		wpi			# Intel 3945ABG
+device		ipw			# Intel 2100
+
+# Realtek Wi-Fi Drivers (Baked In)
+device		rtwn			# Realtek RTL8188CE/RTL8192CE/RTL8188EU
+device		rtw88			# Realtek RTW88 (8822B/8822C/8821C/8723D)
+device		rtw89			# Realtek RTW89 (8852A/8852C)
+device		urtw			# Realtek RTL8187B/L USB
+device		rsu			# Realtek RTL8188SU/RTL8192SU USB
+
+# Atheros / Qualcomm Wi-Fi Drivers (Baked In)
+device		ath			# Atheros IEEE 802.11a/b/g/n
+device		ath_hal			# Atheros Hardware Access Layer
+device		ath_rate_sample		# Sample rate control algorithm
+device		ath_pci			# Atheros PCI/PCIe bus attachment
+device		otus			# Atheros AR9170 USB
+device		ath10k			# Qualcomm Atheros 802.11ac
+
+# MediaTek & Ralink Wi-Fi Drivers (Baked In)
+device		ral			# Ralink Technology RT2500/RT2600/RT2800
+device		rum			# Ralink RT2501USB/RT2601USB
+device		run			# Ralink RT2870/RT3070 USB
+device		mt76			# MediaTek MT7601U/MT7610U/MT7921
+
+# Broadcom & Marvell Wi-Fi Drivers (Baked In)
+device		bwn			# Broadcom BCM43xx
+device		bwi			# Broadcom BCM430x/BCM431x
+device		malo			# Marvell Libertas
+device		mwl			# Marvell 88W8363
+
+# USB Core & Ethernet Controllers
+device		usb			# USB Bus
+device		xhci			# USB 3.0 xHCI
+device		ehci			# USB 2.0 EHCI
+device		uhci			# USB 1.1 UHCI
+device		umass			# USB Mass Storage
+device		re			# Realtek PCIe Ethernet
+device		em			# Intel PRO/1000 Gigabit Ethernet
+device		igc			# Intel 2.5GbE Ethernet
