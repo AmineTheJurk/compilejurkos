@@ -1,0 +1,58 @@
+name: Compile JurkOS Kernels
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'source/kernel/**'
+      - 'The-JurkOS-Project/source/kernel/**'
+      - '.github/workflows/compile-kernels.yml'
+      - 'The-JurkOS-Project/.github/workflows/compile-kernels.yml'
+
+jobs:
+  build-kernel:
+    name: Compiling Kernel
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install build toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            gcc-multilib \
+            binutils
+
+      - name: Compiling Kernel
+        run: |
+          REPO_DIR="$GITHUB_WORKSPACE"
+          if [ -d "$GITHUB_WORKSPACE/The-JurkOS-Project" ]; then
+            REPO_DIR="$GITHUB_WORKSPACE/The-JurkOS-Project"
+          fi
+
+          echo "Compiling JurkOS 64-bit and 32-bit kernels..."
+          cd "$REPO_DIR/source/kernel"
+
+          make kernel-x86_64.elf
+          make kernel-x86.elf
+
+          mkdir -p "$REPO_DIR/iso/boot/limine"
+          cp -f kernel-x86_64.elf "$REPO_DIR/iso/boot/limine/kernel-x86_64"
+          cp -f kernel-x86.elf "$REPO_DIR/iso/boot/limine/kernel-x86"
+
+          echo "Kernel compilation complete:"
+          ls -lh "$REPO_DIR/iso/boot/limine/kernel"*
+
+      - name: Upload Kernel Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: jurkos-kernels
+          path: |
+            iso/boot/limine/kernel-x86_64
+            iso/boot/limine/kernel-x86
+            The-JurkOS-Project/iso/boot/limine/kernel-x86_64
+            The-JurkOS-Project/iso/boot/limine/kernel-x86
+          retention-days: 7
